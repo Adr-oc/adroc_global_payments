@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="adroc_global_payments.ListView.Buttons">
+        <div class="o_list_buttons" role="toolbar">
+            <button type="button"
+                    class="btn btn-primary"
+                    t-on-click="OnTestClick"
+                    title="Cargar Pagos">
+                <i class="fa fa-money me-1"/> Cargar Pagos
+            </button>
+            <button type="button"
+                    class="btn btn-secondary ms-2"
+                    t-on-click="OnNewButtonClick"
+                    title="Cargar Pago Agrupado">
+                <i class="fa fa-group me-1"/> Cargar Pagos (Agrupados)
+            </button>
+        </div>
+    </t>
+</templates>
+
