@@ -199,7 +199,7 @@ class WizzardUploadPayments(models.TransientModel):
                 raise ValidationError(_('No se puede aplicar pago a la factura %s porque ya está completamente pagada.') % line.ref.name)
             # Crear el pago individual para cada línea
             payment = self.env['account.payment'].create({
-                'ref': line.ref.name,
+                'memo': line.ref.name,
                 'date': line.date,
                 'amount': line.amount_company_currency_signed,
                 'state': 'draft',
@@ -265,7 +265,7 @@ class WizzardUploadPayments(models.TransientModel):
 
         # Crear un solo pago agrupado con el monto total
         payment = self.env['account.payment'].create({
-            'ref': f'Pago Agrupado: {factura_refs}',
+            'memo': f'Pago Agrupado: {factura_refs}',
             'date': self.lineas[0].date,
             'amount': total_amount,
             'state': 'draft',
