@@ -53,6 +53,10 @@ class WizzardUploadPayments(models.TransientModel):
             raise ValidationError('No se encontró la columna Referencia')
         if 'Importe' not in df.columns:
             raise ValidationError('No se encontró la columna Importe')
+        
+        # Validar que partner_id esté definido
+        if not self.partner_id:
+            raise ValidationError('Debe seleccionar un proveedor antes de procesar el archivo')
 
         # Iterar sobre las filas
         lines = []
@@ -88,6 +92,7 @@ class WizzardUploadPayments(models.TransientModel):
                         break
                     else:
                         # Si no se encuentra en las líneas, buscar directamente en account_move
+                        reference_pattern = '%{}%'.format(reference)
                         self.env.cr.execute("""
                             SELECT *
                             FROM account_move
@@ -100,7 +105,7 @@ class WizzardUploadPayments(models.TransientModel):
                             AND payment_state != 'paid'
                             AND state != 'cancel'
                             AND (partner_id = %s OR partner_id IS NULL)
-                        """, tuple('%{}%'.format(reference) for _ in range(5)) + (client.id,))
+                        """, (reference_pattern, reference_pattern, reference_pattern, reference_pattern, reference_pattern, client.id))
 
                         factura = self.env.cr.dictfetchall()
                         
