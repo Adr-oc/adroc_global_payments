@@ -17,7 +17,8 @@ class WizzardUploadPayments(models.TransientModel):
     lineas = fields.One2many('invoice.wizzard.list.payments', 'wizzard_id', string='Lineas')
     partner_id = fields.Many2one('res.partner', string="Partner")
     upload_file = fields.Binary(string ='Subir archivo', required=True)
-    payment_method_id = fields.Many2one('account.payment.method.line', string='Método de Pago', required=True)
+    payment_method_id = fields.Many2one('account.payment.method.line', string='Método de Pago', required=True,
+                                        domain="[('company_id', '=', company_id)]")
     currency_id = fields.Many2one('res.currency', string='Moneda', required=True)
     journal_id = fields.Many2one('account.journal', string='Diario', required=True,
                                   domain="[('company_id', '=', company_id)]")
@@ -25,20 +26,21 @@ class WizzardUploadPayments(models.TransientModel):
     @api.onchange('journal_id')
     def _onchange_journal_id(self):
         if self.journal_id:
-            # Filtrar solo métodos de pago entrantes (inbound)
+            # Filtrar solo métodos de pago entrantes (inbound) y de la misma compañía
             return {
                 'domain': {
                     'payment_method_id': [
                         ('journal_id', '=', self.journal_id.id),
-                        ('payment_type', '=', 'inbound')
+                        ('payment_type', '=', 'inbound'),
+                        ('company_id', '=', self.company_id.id)
                     ]
                 }
             }
         else:
-            # Si no hay diario seleccionado, eliminar el dominio
+            # Si no hay diario seleccionado, solo filtrar por compañía
             return {
                 'domain': {
-                    'payment_method_id': []
+                    'payment_method_id': [('company_id', '=', self.company_id.id)]
                 }
             }
 
