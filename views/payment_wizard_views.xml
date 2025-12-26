@@ -10,6 +10,7 @@
                 <form string="Seleccione Proveedores">
                     <group>
                         <!-- filename="document_fname" widget="binary" -->
+                        <field name="company_id" invisible="1"/>
                         <field name="upload_file"/>
                         <field name="journal_id" />
                         <field name="partner_id" string="Proveedor" />

@@ -12,12 +12,15 @@ class WizzardUploadPayments(models.TransientModel):
     _name = "invoice.wizzard.payments"
     _description = "Wizzard para subir pagos"
 
+    company_id = fields.Many2one('res.company', string='Compañía', required=True,
+                                  default=lambda self: self.env.company)
     lineas = fields.One2many('invoice.wizzard.list.payments', 'wizzard_id', string='Lineas')
     partner_id = fields.Many2one('res.partner', string="Partner")
     upload_file = fields.Binary(string ='Subir archivo', required=True)
     payment_method_id = fields.Many2one('account.payment.method.line', string='Método de Pago', required=True)
     currency_id = fields.Many2one('res.currency', string='Moneda', required=True)
-    journal_id = fields.Many2one('account.journal', string='Diario', required=True)
+    journal_id = fields.Many2one('account.journal', string='Diario', required=True,
+                                  domain="[('company_id', '=', company_id)]")
 
     @api.onchange('journal_id')
     def _onchange_journal_id(self):
