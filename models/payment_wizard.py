@@ -22,6 +22,7 @@ class WizzardUploadPayments(models.TransientModel):
     currency_id = fields.Many2one('res.currency', string='Moneda', required=True)
     journal_id = fields.Many2one('account.journal', string='Diario', required=True,
                                   domain="[('company_id', '=', company_id)]")
+    boleta = fields.Char(string='Boleta/Comprobante', help='Número de boleta o comprobante para pagos agrupados')
 
     @api.onchange('journal_id')
     def _onchange_journal_id(self):
@@ -71,10 +72,20 @@ class WizzardUploadPayments(models.TransientModel):
         id_ficticio = -1
         referencias_no_encontradas = []  # Lista para referencias sin factura
         client = self.partner_id
+        context = self.env.context
+
         for index, row in df.iterrows():
+            match_info = {
+                'excel_reference': '',
+                'match_status': 'not_found',
+                'match_field': ''
+            }
+
             if row['Referencia']:
                 references = str(row['Referencia']).split(' ')
+                match_info['excel_reference'] = str(row['Referencia'])
                 factura_encontrada = False  # Variable para saber si alguna factura fue encontrada
+
                 for reference in references:
                     # Buscar factura por las líneas de factura (account_move_line)
                     self.env.cr.execute("""
@@ -89,17 +100,25 @@ class WizzardUploadPayments(models.TransientModel):
                     """, ('%{}%'.format(reference), client.id))
                     factura = self.env.cr.dictfetchall()
 
-
                     if factura:
                         id_factura = factura[0]['move_id']
                         nombre_factura = self.env['account.move'].search([('id', '=', id_factura), ('move_type', '=', 'out_invoice')], limit=1)
                         factura_encontrada = True
+                        match_info['match_status'] = 'found'
+                        match_info['match_field'] = 'Línea de Factura (account_move_line.name)'
                         break
                     else:
                         # Si no se encuentra en las líneas, buscar directamente en account_move
                         reference_pattern = '%{}%'.format(reference)
                         self.env.cr.execute("""
-                            SELECT *
+                            SELECT *,
+                                CASE
+                                    WHEN x_studio_serie ILIKE %s THEN 'x_studio_serie'
+                                    WHEN x_studio_nmero_de_dte ILIKE %s THEN 'x_studio_nmero_de_dte'
+                                    WHEN ref ILIKE %s THEN 'ref'
+                                    WHEN referencia_1 ILIKE %s THEN 'referencia_1'
+                                    WHEN referencia_2 ILIKE %s THEN 'referencia_2'
+                                END as matched_field
                             FROM account_move
                             WHERE (x_studio_serie ILIKE %s
                             OR x_studio_nmero_de_dte ILIKE %s
@@ -110,15 +129,25 @@ class WizzardUploadPayments(models.TransientModel):
                             AND payment_state != 'paid'
                             AND state != 'cancel'
                             AND (partner_id = %s OR partner_id IS NULL)
-                        """, (reference_pattern, reference_pattern, reference_pattern, reference_pattern, reference_pattern, client.id))
+                        """, (reference_pattern, reference_pattern, reference_pattern, reference_pattern, reference_pattern,
+                              reference_pattern, reference_pattern, reference_pattern, reference_pattern, reference_pattern, client.id))
 
                         factura = self.env.cr.dictfetchall()
-                        
 
                         if factura:
                             id_factura = factura[0]['id']
                             nombre_factura = self.env['account.move'].search([('id', '=', id_factura), ('move_type', '=', 'out_invoice')], limit=1)
                             factura_encontrada = True
+                            match_info['match_status'] = 'found'
+                            matched_field_name = factura[0].get('matched_field', 'unknown')
+                            field_labels = {
+                                'x_studio_serie': 'Serie DTE',
+                                'x_studio_nmero_de_dte': 'Número DTE',
+                                'ref': 'Referencia',
+                                'referencia_1': 'Referencia 1',
+                                'referencia_2': 'Referencia 2'
+                            }
+                            match_info['match_field'] = field_labels.get(matched_field_name, matched_field_name)
                             break
 
                 # Si no se encontró una factura para la referencia
@@ -127,18 +156,29 @@ class WizzardUploadPayments(models.TransientModel):
                     id_ficticio -= 1  # Decremento para asegurar que sea único
                     nombre_factura = False  # No se encontró factura real
                     referencias_no_encontradas.append(reference)  # Agregar referencia a la lista
+                    match_info['match_status'] = 'not_found'
+                    match_info['match_field'] = 'No encontrado'
 
             # Agrupar pagos si ya se encontró la factura
             if id_factura in facturas:
-                lines[facturas.index(id_factura)]['amount_company_currency_signed'] += row['Importe']
-                lines[facturas.index(id_factura)]['boleta'] += ' ' + str(row['Pago'])
+                idx = facturas.index(id_factura)
+                lines[idx]['amount_company_currency_signed'] += row['Importe']
+                # Solo agregar boleta si es modo individual (from_test_click)
+                if context.get('from_test_click'):
+                    lines[idx]['boleta'] += ' ' + str(row['Pago'])
             else:
+                # Para pagos agrupados, no guardar boleta en líneas individuales
+                boleta_value = str(row['Pago']) if context.get('from_test_click') else ''
+
                 lines.append({
                     'ref': nombre_factura.id if nombre_factura else False,
                     'date': row['Fecha'],
-                    'boleta': str(row['Pago']),
+                    'boleta': boleta_value,
                     'amount_company_currency_signed': row['Importe'],
                     'state': 'draft',
+                    'excel_reference': match_info['excel_reference'],
+                    'match_status': match_info['match_status'],
+                    'match_field': match_info['match_field'],
                 })
                 facturas.append(id_factura)
 
@@ -147,20 +187,18 @@ class WizzardUploadPayments(models.TransientModel):
             # Buscar el registro de la factura usando el ID almacenado en line['ref']
             factura = self.env['account.move'].browse(line['ref']) if line['ref'] else False
             monto_adeudado = factura.amount_residual if factura else 0.0
-            context = self.env.context
-            if context.get('from_test_click'):
-                boleta = line['boleta']
-            elif context.get('from_new_button_click'):
-                boleta = ""
-                #aqui se deberia agregar el campo del monto total
+
             self.env['invoice.wizzard.list.payments'].create({
                 'wizzard_id': self.id,
                 'ref': line['ref'],
                 'date': line['date'] if line['date'] else datetime.now(),
                 'amount_company_currency_signed': line['amount_company_currency_signed'],
-                'amount_total_ade': monto_adeudado, 
+                'amount_total_ade': monto_adeudado,
                 'partner_id': factura.partner_id.id if factura else 0,
-                'boleta': boleta,
+                'boleta': line.get('boleta', ''),
+                'excel_reference': line.get('excel_reference', ''),
+                'match_status': line.get('match_status', 'not_found'),
+                'match_field': line.get('match_field', ''),
             })
 
 
@@ -265,8 +303,8 @@ class WizzardUploadPayments(models.TransientModel):
         # Obtener la lista de referencias de facturas
         factura_refs = ', '.join(line.ref.name for line in self.lineas)
 
-        # unicamente primer boleta
-        boleta_unica = self.lineas[0].boleta
+        # Usar la boleta del nivel del formulario principal
+        boleta_agrupada = self.boleta if self.boleta else ''
 
         # Crear un solo pago agrupado con el monto total
         payment = self.env['account.payment'].create({
@@ -278,7 +316,7 @@ class WizzardUploadPayments(models.TransientModel):
             'payment_method_line_id': self.payment_method_id.id,
             'partner_id': self.partner_id.id,
             'currency_id': self.currency_id.id,
-            'boleta': boleta_unica,  # Asignar la boleta única si todas son iguales
+            'boleta': boleta_agrupada,  # Usar la boleta del formulario principal
         })
 
         payment.action_post()
@@ -339,6 +377,14 @@ class WizzardListPayments(models.TransientModel):
         ('posted', 'Publicado'),
         ('cancel', 'Cancelado'),
     ], string='Estado', default='draft')
+
+    # Campos para mostrar información de match del Excel
+    excel_reference = fields.Char(string='Ref. Excel', help='Referencia original del archivo Excel')
+    match_status = fields.Selection([
+        ('found', 'Encontrada'),
+        ('not_found', 'No Encontrada'),
+    ], string='Estado Match', help='Indica si la factura fue encontrada en el sistema')
+    match_field = fields.Char(string='Campo Match', help='Campo donde se encontró la coincidencia')
 
     # Campo computado para la moneda
     currency_id = fields.Many2one('res.currency', string='Moneda', compute='_compute_currency_id', store=True)

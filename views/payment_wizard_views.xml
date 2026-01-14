@@ -9,13 +9,19 @@
             <field name="arch" type="xml">
                 <form string="Seleccione Proveedores">
                     <group>
-                        <!-- filename="document_fname" widget="binary" -->
-                        <field name="company_id" invisible="1"/>
-                        <field name="upload_file"/>
-                        <field name="journal_id" />
-                        <field name="partner_id" string="Proveedor" />
-                        <field name="payment_method_id" />
-                        <field name="currency_id" />
+                        <group>
+                            <!-- filename="document_fname" widget="binary" -->
+                            <field name="company_id" invisible="1"/>
+                            <field name="upload_file"/>
+                            <field name="journal_id" />
+                            <field name="partner_id" string="Proveedor" />
+                        </group>
+                        <group>
+                            <field name="payment_method_id" />
+                            <field name="currency_id" />
+                            <field name="boleta" placeholder="Ej: Boleta-12345"
+                                   help="Campo para pagos agrupados. En pagos individuales se usa la boleta de cada línea."/>
+                        </group>
                     </group>
                     <group>
                         <button name="read_file" string="Generar Lineas" type="object"
@@ -24,16 +30,20 @@
                     <notebook>
                         <page string="Lineas Pagos">
                             <field name="lineas">
-                                <list editable="top">
+                                <list editable="top" decoration-success="match_status == 'found'" decoration-danger="match_status == 'not_found'">
                                     <field name="company_currency_id" invisible="1" />
-                                    <field name="ref"/>
+                                    <field name="match_status" invisible="1"/>
+                                    <field name="excel_reference" string="Ref. Excel" optional="show"/>
+                                    <field name="ref" string="Factura Sistema"/>
+                                    <field name="match_field" string="Campo Match" optional="show"/>
                                     <field name="partner_id"/>
-                                    <field name="company_currency_id"/>
-                                    <field name="boleta"/>
+                                    <field name="boleta" string="Boleta Individual" optional="hide"
+                                           help="Solo usado en pagos individuales"/>
                                     <field name="date" />
                                     <field name="amount_company_currency_signed" widget="monetary"
                                         string="Monto" sum="Total" />
-                                    <field name="amount_total_ade" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="amount_total_ade" widget="monetary" options="{'currency_field': 'currency_id'}"
+                                           string="Saldo Pendiente"/>
                                 </list>
                             </field>
                         </page>
